@@ -504,22 +504,55 @@ def _private_kb(eid, admin_added=False):
 #  /start  —  DM welcome
 # ══════════════════════════════════════════
 async def cmd_start(update: Update, ctx):
-    u = update.effective_user; upsert_user(u)
+    u = update.effective_user
+    upsert_user(u)
+
+    try:
+        from plugins.force_sub import is_subscribed, force_sub_markup
+
+        if not await is_subscribed(ctx.bot, u.id):
+            await update.message.reply_text(
+                "⚠️ <b>Join Required</b>\n\n"
+                "Please join our channel to use this bot, then tap the button below.",
+                parse_mode="HTML",
+                reply_markup=force_sub_markup()
+            )
+            return
+
+    except ImportError:
+        pass
+
     # referral
     if ctx.args:
-        code = ctx.args[0].replace("ref_","")
+        code = ctx.args[0].replace("ref_", "")
         ref = row("SELECT uid FROM users WHERE referral_code=?", (code,))
-        if ref and ref["uid"] != u.id:
-            existing = row("SELECT referred_by FROM users WHERE uid=?", (u.id,))
-            if existing and not existing.get("referred_by"):
-                dbc("UPDATE users SET referred_by=? WHERE uid=?", (ref["uid"], u.id))
-                dbc("UPDATE users SET invite_count=invite_count+1, fee_discount=MIN(fee_discount+0.5,50) WHERE uid=?",
-                    (ref["uid"],))
-                try: await ctx.bot.send_message(ref["uid"],
-                    f"🎉 <b>Referral!</b> {u.full_name} joined via your link! +0.5% discount earned.",
-                    parse_mode="HTML")
-                except: pass
 
+        if ref and ref["uid"] != u.id:
+            existing = row(
+                "SELECT referred_by FROM users WHERE uid=?",
+                (u.id,)
+            )
+
+            if existing and not existing.get("referred_by"):
+                dbc(
+                    "UPDATE users SET referred_by=? WHERE uid=?",
+                    (ref["uid"], u.id)
+                )
+
+                dbc(
+                    "UPDATE users SET invite_count=invite_count+1, "
+                    "fee_discount=MIN(fee_discount+0.5,50) WHERE uid=?",
+                    (ref["uid"],)
+                )
+
+                try:
+                    await ctx.bot.send_message(
+                        ref["uid"],
+                        f"🎉 <b>Referral!</b> {u.full_name} joined via your link! +0.5% discount earned.",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
     img = make_welcome_img(u.first_name)
     bio = io.BytesIO(img); bio.name="welcome.png"
     p   = get_user(u.id); code = p.get("referral_code","") if p else ""
